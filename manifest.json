@@ -1,0 +1,18 @@
+{
+  "required_api_version": "^2.0.0",
+  "name": "Babel",
+  "description": "Unit converter",
+  "developer_name": "Extner32",
+  "icon": "images/fish.png",
+  "options": {
+    "query_debounce": 0.05
+  },
+  "preferences": [
+    {
+      "id": "babel-converter",
+      "type": "keyword",
+      "name": "Babel",
+      "default_value": "bab"
+    }
+  ]
+}
