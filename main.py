@@ -13,11 +13,17 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'vendor'))
 
 from pint import UnitRegistry
-from pint.errors import UndefinedUnitError, DimensionalityError
-from decimal import Decimal
+from pint.errors import UndefinedUnitError, DimensionalityError, OffsetUnitCalculusError
+from decimal import Decimal, getcontext
 import re
 
-ureg = UnitRegistry(non_int_type=Decimal)
+
+# Set precision of decimal from 28 to 50
+getcontext().prec = 50
+
+ureg = UnitRegistry(non_int_type=Decimal, autoconvert_offset_to_baseunit=True)
+
+MAX_DISPLAY_PRECISION = 5
 
 def convert_units(user_input):
     try:
@@ -33,38 +39,60 @@ def convert_units(user_input):
 
     try:
         return ureg(src).to(dst)
+    except OffsetUnitCalculusError:
+        src = ureg.parse_expression(src, case_sensitive=False)
+        dst = ureg.parse_expression(dst, case_sensitive=False)
+        return src.to(dst)
+
     except UndefinedUnitError as e:
         e_value = str(e).split("'")[1]
-        return f"I couldn't find the unit \"{e_value}\""
+        return f"I don't know the unit \"{e_value}\""
     except DimensionalityError as e:
         #e.g.: Cannot convert from 'centimeter' ([length]) to 'speed_of_light' ([length] / [time])
         e_values = re.split(r'\(|\)', str(e))
         e_values = [e_values[1], e_values[3]]
         return f"Dimension mismatch: {e_values[0]} to {e_values[1]}."
-    except:
-        return "I can't convert that!?"
+    
+    
+    except Exception as e:
+        #return "I can't convert that!?"
+        return str(e)
 
 
-def cleantruncate(number:float, max_digits:int, ellipsis="...") -> str:
-    if (len(str(number)) > max_digits):
-        if (max_digits-len(ellipsis)) > 0:
-            return str(number)[0:max_digits-len(ellipsis)] + ellipsis
-        else:
-            return (str(number))[0:max_digits]
-            
-    return str(number)
 
-#makes sure that a float datatype that is actually an integer doesn't have .0 at the end
-#eg: 60.0 -> 60
-def number_to_str(number):
-    if (number - int(number)) == 0: #get the fractional part
-        return str(int(number))
+def format_quantity(q, digits):
+    mag = round(q.magnitude, digits)
+
+    # Format magnitude nicely
+    if mag == int(mag):
+        mag_str = str(int(mag))
     else:
-        return str(number)
+        mag_str = f"{mag:.{digits}f}".rstrip('0').rstrip('.')
+
+    unit_str = f"{q.units:~P}"
+
+    return f"{mag_str} {unit_str}"
 
 
+def number_to_clean_str(number, digits):
+    if "." not in str(number):
+        return str(int(number))
+    
+    if len(str(number)) > digits:
+        s = str(round(number, digits)).rstrip("0")
+        if s[-1] == ".":
+            s = s[:-1]
+        
+        return s
+    else:
+        s = str(number).rstrip("0")
+        if s[-1] == ".":
+            s = s[:-1]
+        
+        return s 
 
-class DemoExtension(Extension):
+
+class BabelExtension(Extension):
 
     def __init__(self):
         super().__init__()
@@ -78,12 +106,13 @@ class KeywordQueryEventListener(EventListener):
         result = convert_units(event.get_argument())
         
         if type(result) != str:
-            pretty_result = "{:~P}".format(result)
+            pretty_result = format_quantity(result, MAX_DISPLAY_PRECISION)
+            str_result = number_to_clean_str(result.magnitude, MAX_DISPLAY_PRECISION)
             items.append(ExtensionResultItem(
 
                 icon='images/fish.png',
-                name=pretty_result,description=f"enter to copy {result.magnitude} to clipboard",
-                on_enter=CopyToClipboardAction(number_to_str(result.magnitude))
+                name=pretty_result,description=f"enter to copy {str_result} to clipboard",
+                on_enter=CopyToClipboardAction(str_result)
             ))
 
         else:
@@ -95,4 +124,4 @@ class KeywordQueryEventListener(EventListener):
 
 
 if __name__ == '__main__':
-    DemoExtension().run()
+    BabelExtension().run()
